@@ -12,33 +12,10 @@ from gemini_api import generate_content, create_embeddings
 import re
 import pickle
 import json
+from contextlib import asynccontextmanager
 
 # Load environment variables
 load_dotenv()
-
-app = FastAPI(
-    title="SHL Assessment Recommender API",
-    description="API for recommending SHL assessments based on job descriptions and queries",
-    version="1.0.0"
-)
-
-# Data models
-class Assessment(BaseModel):
-    url: str
-    adaptive_support: str
-    description: str
-    duration: int
-    remote_support: str
-    test_type: List[str]
-
-class RecommendationRequest(BaseModel):
-    query: str = Field(..., description="Natural language query or job description")
-    max_results: Optional[int] = Field(10, description="Maximum number of results to return", ge=1, le=20)
-    test_types: Optional[List[str]] = Field(None, description="Filter by specific test types")
-    max_duration: Optional[int] = Field(None, description="Maximum duration in minutes", ge=0)
-
-class RecommendationResponse(BaseModel):
-    recommended_assessments: List[Assessment]
 
 # Global variables
 assessments_df = None
@@ -75,6 +52,46 @@ def load_or_scrape_data():
     df = enhance_duration_data(df)
     
     return df
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global assessments_df
+    try:
+        assessments_df = load_or_scrape_data()
+        print(f"Loaded {len(assessments_df)} assessments")
+    except Exception as e:
+        print(f"Error loading assessment data: {e}")
+    
+    yield
+    
+    # Shutdown (if needed)
+    pass
+
+app = FastAPI(
+    title="SHL Assessment Recommender API",
+    description="API for recommending SHL assessments based on job descriptions and queries",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Data models
+class Assessment(BaseModel):
+    url: str
+    adaptive_support: str
+    description: str
+    duration: int
+    remote_support: str
+    test_type: List[str]
+
+class RecommendationRequest(BaseModel):
+    query: str = Field(..., description="Natural language query or job description")
+    max_results: Optional[int] = Field(10, description="Maximum number of results to return", ge=1, le=20)
+    test_types: Optional[List[str]] = Field(None, description="Filter by specific test types")
+    max_duration: Optional[int] = Field(None, description="Maximum duration in minutes", ge=0)
+
+class RecommendationResponse(BaseModel):
+    recommended_assessments: List[Assessment]
 
 def enhance_duration_data(df):
     """Add estimated durations based on test types"""
@@ -290,6 +307,20 @@ def enhance_recommendations(results, query):
     results['relevance'] = explanations
     return results
 
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "SHL Assessment Recommender API",
+        "version": "1.0.0",
+        "status": "online",
+        "endpoints": {
+            "health": "/health",
+            "recommend": "/recommend (POST)",
+            "documentation": "/docs"
+        }
+    }
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -300,7 +331,7 @@ async def health_check():
         "api_version": "1.0.0",
         "data_loaded": assessments_df is not None and not assessments_df.empty,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "endpoints": ["/recommend", "/assessment", "/health", "/metadata"]
+        "endpoints": ["/", "/recommend", "/health", "/docs"]
     }
 
 @app.post("/recommend", response_model=RecommendationResponse)
@@ -380,14 +411,5 @@ async def recommend(request: RecommendationRequest = Body(...)):
             detail="An error occurred while processing your request"
         )
 
-@app.on_event("startup")
-async def startup_event():
-    global assessments_df
-    try:
-        assessments_df = load_or_scrape_data()
-        print(f"Loaded {len(assessments_df)} assessments")
-    except Exception as e:
-        print(f"Error loading assessment data: {e}")
-
 if __name__ == "__main__":
-    uvicorn.run("api:app", host="localhost", port=8001, reload=True)
+    uvicorn.run("api:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), reload=False)

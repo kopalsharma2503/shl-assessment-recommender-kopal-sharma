@@ -18,7 +18,7 @@ st.set_page_config(
 load_dotenv()
 
 # API endpoint
-API_ENDPOINT = "http://localhost:8000"
+API_ENDPOINT = "https://shl-assessment-recommender-kopal-sharma.onrender.com"  
 
 def check_api_health():
     """Check if the API is available"""
