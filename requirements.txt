@@ -65,3 +65,4 @@ sentence-transformers==2.2.2
 transformers==4.36.0
 huggingface-hub==0.19.4
 torch==2.1.0
+matplotlib==3.8.0
